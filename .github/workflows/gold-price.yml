@@ -2,8 +2,8 @@ name: Bhubaneswar Gold Price Tracker
 
 on:
   schedule:
-    # Runs every 4 hours
-    - cron: '0 */4 * * *'
+    # Every 4 hours
+    - cron: "0 */4 * * *"
 
   workflow_dispatch:
 
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  gold-price:
+  gold-tracker:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,12 +22,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Install Playwright Browser
+      - name: Install Playwright Chromium
         run: npx playwright install chromium
 
       - name: Run Gold Tracker
@@ -36,14 +37,28 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: node index.js
 
-      - name: Commit Updated Price
+      # Upload debug files even if scraper fails
+      - name: Upload Debug Files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            page.html
+            page.png
+          if-no-files-found: ignore
+
+      # Save updated price.json
+      - name: Commit Updated price.json
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
           git add price.json
 
-          git diff --cached --quiet || (
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
             git commit -m "Update latest gold price"
             git push
-          )
+          fi
