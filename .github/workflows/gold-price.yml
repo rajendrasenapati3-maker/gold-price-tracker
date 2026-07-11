@@ -2,9 +2,9 @@ name: Bhubaneswar Gold Price Tracker
 
 on:
   schedule:
-    # Every 4 hours
-    - cron: "0 */4 * * *"
-
+    # Runs every day at 11:00 AM and 5:00 PM IST
+    - cron: "30 5,11 * * *"
+    
   workflow_dispatch:
 
 permissions:
