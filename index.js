@@ -2,115 +2,197 @@ const { chromium } = require("playwright");
 const axios = require("axios");
 const fs = require("fs");
 
-//============================
-// CONFIGURATION
-//============================
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-const URL =
-  "https://www.goodreturns.in/gold-rates/bhubaneswar.html";
+const URL = "https://www.goodreturns.in/gold-rates/bhubaneswar.html";
 
-//============================
-// MAIN
-//============================
 (async () => {
 
-    const browser = await chromium.launch({
-        headless: true
-    });
+    let browser;
 
-    const page = await browser.newPage();
+    try {
 
-    await page.goto(URL, {
-        waitUntil: "networkidle",
-        timeout: 60000
-    });
+        browser = await chromium.launch({
+            headless: true,
+            args: [
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox"
+            ]
+        });
 
-    // Wait until the price is visible
-    await page.waitForSelector("#24K-price");
+        const context = await browser.newContext({
 
-    // Read price
-    const priceText = await page.locator("#24K-price").innerText();
+            viewport: {
+                width: 1366,
+                height: 768
+            },
 
-    // Example:
-    // ₹14,433
+            userAgent:
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138 Safari/537.36"
 
-    const currentPrice = priceText.replace(/[₹,\s]/g, "");
+        });
 
-    console.log("Current Price:", currentPrice);
+        const page = await context.newPage();
 
-    //-------------------------------------
-    // Read previous price
-    //-------------------------------------
+        // Block heavy resources
+        await page.route("**/*", (route) => {
 
-    let previousPrice = "";
+            const type = route.request().resourceType();
 
-    if (fs.existsSync("price.json")) {
+            if (
+                type === "image" ||
+                type === "media" ||
+                type === "font"
+            ) {
+                return route.abort();
+            }
 
-        const data = JSON.parse(
-            fs.readFileSync("price.json")
-        );
+            route.continue();
 
-        previousPrice = data.lastPrice;
+        });
 
-    }
+        console.log("Opening website...");
 
-    //-------------------------------------
-    // Compare
-    //-------------------------------------
+        await page.goto(URL, {
+            waitUntil: "domcontentloaded",
+            timeout: 120000
+        });
 
-    if (currentPrice !== previousPrice) {
+        await page.waitForTimeout(8000);
 
-        console.log("Price Changed");
+        // Save page for debugging
+        fs.writeFileSync("page.html", await page.content());
 
-        let message =
+        await page.screenshot({
+            path: "page.png",
+            fullPage: true
+        });
+
+        console.log("Searching for price...");
+
+        // Try multiple selectors
+        const selectors = [
+            "#24K-price",
+            "[id='24K-price']",
+            ".gold_summ_price",
+            ".gold-rate",
+            "table"
+        ];
+
+        let price = null;
+
+        for (const selector of selectors) {
+
+            try {
+
+                if (await page.locator(selector).count()) {
+
+                    const text = await page.locator(selector).first().innerText();
+
+                    const match = text.match(/₹\s?([\d,]+)/);
+
+                    if (match) {
+                        price = "₹" + match[1];
+                        break;
+                    }
+
+                }
+
+            } catch (e) {}
+
+        }
+
+        if (!price) {
+
+            const html = await page.content();
+
+            const match = html.match(/24K[\s\S]{0,500}?₹\s?([\d,]+)/i);
+
+            if (match)
+                price = "₹" + match[1];
+
+        }
+
+        if (!price)
+            throw new Error("24K price not found.");
+
+        console.log("Price =", price);
+
+        let previous = "";
+
+        if (fs.existsSync("price.json")) {
+
+            previous = JSON.parse(
+                fs.readFileSync("price.json")
+            ).lastPrice;
+
+        }
+
+        if (price !== previous) {
+
+            await axios.post(
+
+                `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+
+                {
+
+                    chat_id: CHAT_ID,
+
+                    text:
 `🏆 Bhubaneswar Gold Price
 
-🥇 24K Gold
+24K Gold
 
-${priceText} / gram
+${price} / gram
 
-Previous : ${previousPrice || "N/A"}
+Previous : ${previous || "N/A"}
 
-Current : ${priceText}
+Current : ${price}
 
-Time :
-${new Date().toLocaleString("en-IN")}`;
+Updated :
+${new Date().toLocaleString("en-IN")}
 
-        //---------------------------------
-        // Telegram
-        //---------------------------------
+${URL}`
 
-        await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
-                chat_id: CHAT_ID,
-                text: message
-            }
-        );
+                }
 
-        //---------------------------------
-        // Save latest price
-        //---------------------------------
+            );
 
-        fs.writeFileSync(
-            "price.json",
-            JSON.stringify(
-                {
-                    lastPrice: currentPrice
-                },
-                null,
-                2
-            )
-        );
+            fs.writeFileSync(
 
-    } else {
+                "price.json",
 
-        console.log("No Price Change");
+                JSON.stringify(
+                    {
+                        lastPrice: price
+                    },
+                    null,
+                    2
+                )
+
+            );
+
+            console.log("Telegram sent.");
+
+        } else {
+
+            console.log("No change.");
+
+        }
+
+        await browser.close();
+
+    } catch (err) {
+
+        console.error(err);
+
+        if (browser)
+            await browser.close();
+
+        process.exit(1);
 
     }
-
-    await browser.close();
 
 })();
