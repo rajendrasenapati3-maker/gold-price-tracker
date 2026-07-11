@@ -1,1 +1,49 @@
+name: Bhubaneswar Gold Price Tracker
 
+on:
+  schedule:
+    # Runs every 4 hours
+    - cron: '0 */4 * * *'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  gold-price:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Install Playwright Browser
+        run: npx playwright install chromium
+
+      - name: Run Gold Tracker
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: node index.js
+
+      - name: Commit Updated Price
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          git add price.json
+
+          git diff --cached --quiet || (
+            git commit -m "Update latest gold price"
+            git push
+          )
