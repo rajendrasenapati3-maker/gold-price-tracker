@@ -1,13 +1,13 @@
 {
   "name": "gold-price-tracker",
   "version": "1.0.0",
-  "description": "Track Bhubaneswar 24K Gold Price",
+  "description": "Bhubaneswar Gold Tracker",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "playwright": "^1.54.2",
-    "axios": "^1.11.0"
+    "axios": "^1.11.0",
+    "playwright": "^1.54.2"
   }
 }
